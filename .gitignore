@@ -1,0 +1,6 @@
+logs/
+automation/*.lock
+*.partial
+Day*.html
+Preview.html
+.env*
