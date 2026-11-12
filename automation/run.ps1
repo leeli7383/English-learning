@@ -10,10 +10,13 @@ if (!$Preview -and $now.Date -lt $start) { exit 0 }
 $day = [Math]::Max(1, [int]($now.Date-$start).TotalDays+1)
 $name = if ($Preview) { 'Preview.html' } else { 'Day{0:D3}_{1}.html' -f $day,$now.ToString('yyyy-MM-dd') }
 $out = Join-Path $base $name
-if (Test-Path -LiteralPath $out) { exit 0 }
 $lock = $null
 try {
  $lock = [IO.File]::Open((Join-Path $base 'automation\run.lock'),'OpenOrCreate','ReadWrite','None')
+ if (Test-Path -LiteralPath $out) {
+  if (!$Preview) { & (Join-Path $base 'automation\sync-github.ps1') }
+  return
+ }
  $prompt = Get-Content -LiteralPath (Join-Path $base 'automation\prompt.txt') -Raw -Encoding UTF8
  $prompt += "`nOutput filename: $name . Beijing date: $($now.ToString('yyyy-MM-dd'))."
  $history = Get-ChildItem -LiteralPath $base -Filter 'Day*.html' | Sort-Object Name | Select-Object -Last 90 | ForEach-Object { [regex]::Matches((Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8), '(?is)<h2[^>]*>(.*?)</h2>') | ForEach-Object { $_.Groups[1].Value -replace '<[^>]+>','' } }
@@ -48,4 +51,5 @@ try {
  if (!(Test-Path -LiteralPath $out)) { throw "No final lesson. See $log" }
  $html = Get-Content -LiteralPath $out -Raw -Encoding UTF8
  if ($html.Length -lt 2000 -or $html -notmatch '</html>' -or $html -notmatch 'https://') { throw 'Lesson validation failed' }
+ if (!$Preview) { & (Join-Path $base 'automation\sync-github.ps1') }
 } finally { if ($lock) { $lock.Dispose() } }
