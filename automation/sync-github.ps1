@@ -3,6 +3,9 @@ $base = Split-Path -Parent $PSScriptRoot
 $git = (Get-Command git.exe -ErrorAction SilentlyContinue).Source
 if (!$git -and (Test-Path -LiteralPath 'D:\Git\cmd\git.exe')) { $git = 'D:\Git\cmd\git.exe' }
 if (!$git) { throw 'Git is not installed or available to this task.' }
+# Local approval gate: keep scheduled uploads disabled until visibility is confirmed.
+$uploadApproval = & $git -C $base config --local --get englishlearning.githubUploadApproved
+if ($uploadApproval -ne 'true') { throw 'GitHub upload paused: confirm private repository or explicitly approve public upload first.' }
 $env:GIT_TERMINAL_PROMPT = '0'
 $env:GCM_INTERACTIVE = 'never'
 function Invoke-RepoGit {
