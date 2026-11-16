@@ -28,3 +28,8 @@ GitHub尚未同步：本环境无gh命令、无创建仓库工具，未配置远
 2026-11-12：用户明确将全局 GitHub 新建仓库默认可见性改为公开，并授权 English-learning 当前公开仓库上传。已启用本机自动上传开关；定时脚本后续会在验证每日 HTML 后提交并推送当前分支。上传结果将核对本地与远程提交编号。
 
 2026-11-16：完成 Day006_2026-11-16.html，口语 the thing is、写作 by contrast、阅读 stand out，各含两句原创双语例句；逐条核验 TED/NASA 原文，嵌入两张 NASA 原文配图。结构检查：3 条表达、6 句原创例句、2 张内嵌图片、无未替换图片占位。Day003 至 Day005 为既有未跟踪文件，本阶段不纳入提交。下一步：继续每日生成，按日期避免重复，并核对 GitHub 推送。
+
+
+## 2026-11-16：切换轻量本地调度
+
+在原项目内新增 manage.ps1、scheduled-run.ps1 和“管理每日英语.cmd”。新 Windows 任务 EnglishLearningDailyV2 每天北京时间 09:00 运行，保留用户登录要求、电池运行、45 分钟上限和禁止并发，不创建常驻服务。环境检查 8 项测试通过，CLI 登录有效；两次真实调度均跳过已有当天课程并成功推送。旧任务 EnglishLearningDaily（原为 Disabled）已导出 XML 并删除；旧客户端英语自动化 id=automation、目标聊天 01a1c847-9e1f-7513-a2a8-0b54d8ccbfe7 的 TOML 和唯一数据库行已精确备份移除，其他调度不变。私有备份在 logs/migration-20261116-102227，不上传 GitHub。Windows CIM 任务枚举存在兼容错误，管理工具改用原生 COM 按名称访问。修复 Git 成功 stderr 被 PowerShell 转为 ErrorRecord 后重显为错误的问题。历史课程未改写，本次未调用模型生成新课。

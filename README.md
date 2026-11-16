@@ -40,7 +40,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\English_learning\auto
 
 定时入口为 `automation/scheduled-run.ps1`，复用 `automation/run.ps1` 的互斥锁和原有课程要求。`scheduler.local.json` 保存本机绝对路径，`data/scheduler-status.json` 保存后台执行结果，`logs/scheduler-*.log` 保存日志，三者都不提交。迁移备份保存在 `logs/migration-*`，也不上传 GitHub。
 
-本阶段先部署并验证新任务，再备份移除旧 Windows 任务 `EnglishLearningDaily` 和旧 Codex“每日英语任务”调度；切换的实际验证及清理状态以 PROGRESS.md 为准。保留课程文件、原聊天、其他自动化和已有 Git 分支。
+2026-11-16 已完成切换：新任务两次后台实跑退出码均为 0，同日跳过模型并成功备份；已备份删除旧 Windows 任务 `EnglishLearningDaily`、旧 Codex“每日英语任务”TOML 和对应的唯一数据库调度记录。其他自动化、原聊天、课程文件及已有 Git 分支保留。旧配置备份位于 `logs/migration-20261116-102227`（本机私有、不提交），含原任务 XML、原 TOML 和原数据库行；不需要日常读取。
 
 ## 文件分工
 

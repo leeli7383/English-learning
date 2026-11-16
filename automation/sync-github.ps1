@@ -18,7 +18,7 @@ function Invoke-RepoGit {
   $gitExit = $LASTEXITCODE
  } finally { $ErrorActionPreference = $savedPreference }
  if ($gitExit -ne 0) { throw "Git failed: $($GitArguments[0]). $($result -join [Environment]::NewLine)" }
- return $result
+ return @($result | ForEach-Object { $_.ToString() })
 }
 $branch = (Invoke-RepoGit -GitArguments @('branch','--show-current') | Out-String).Trim()
 if ($branch -ne 'ai/daily-html-backup') { throw 'Expected branch ai/daily-html-backup; refusing to push another branch.' }
