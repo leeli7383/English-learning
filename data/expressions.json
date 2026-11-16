@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "file": "Day001_2026-11-11.html",
+      "number": 1,
+      "date": "2026-11-11",
+      "size": 7107,
+      "mtime_ns": 1794361806005280600,
+      "expressions": [
+        "to be fair",
+        "in light of",
+        "on the verge of"
+      ]
+    },
+    {
+      "file": "Day 002 · 2026-11-12 .html",
+      "number": 2,
+      "date": "2026-11-12",
+      "size": 7368,
+      "mtime_ns": 1794453054192435300,
+      "expressions": [
+        "fair enough",
+        "with respect to",
+        "at the expense of"
+      ]
+    },
+    {
+      "file": "Day003_2026-11-13.html",
+      "number": 3,
+      "date": "2026-11-13",
+      "size": 7112,
+      "mtime_ns": 1794531901059694700,
+      "expressions": [
+        "I hear you",
+        "in practice",
+        "by no means"
+      ]
+    },
+    {
+      "file": "Day004_2026-11-14.html",
+      "number": 4,
+      "date": "2026-11-14",
+      "size": 690450,
+      "mtime_ns": 1794629760035951000,
+      "expressions": [
+        "that said",
+        "in turn",
+        "take for granted"
+      ]
+    },
+    {
+      "file": "Day005_2026-11-15.html",
+      "number": 5,
+      "date": "2026-11-15",
+      "size": 539288,
+      "mtime_ns": 1794733551571878000,
+      "expressions": [
+        "for what it's worth",
+        "in the wake of",
+        "at first glance"
+      ]
+    },
+    {
+      "file": "Day006_2026-11-16.html",
+      "number": 6,
+      "date": "2026-11-16",
+      "size": 203098,
+      "mtime_ns": 1794790943226617000,
+      "expressions": [
+        "the thing is",
+        "by contrast",
+        "stand out"
+      ]
+    }
+  ]
+}

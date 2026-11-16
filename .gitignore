@@ -3,3 +3,8 @@ automation/*.lock
 *.partial
 Preview.html
 .env*
+
+# Local runtime status and Python cache
+data/state.json
+__pycache__/
+*.pyc

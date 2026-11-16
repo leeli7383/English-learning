@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿param([Parameter(Mandatory=$true)][string]$LessonName)
+$ErrorActionPreference = 'Stop'
 $base = Split-Path -Parent $PSScriptRoot
 $git = (Get-Command git.exe -ErrorAction SilentlyContinue).Source
 if (!$git -and (Test-Path -LiteralPath 'D:\Git\cmd\git.exe')) { $git = 'D:\Git\cmd\git.exe' }
@@ -20,21 +21,22 @@ function Invoke-RepoGit {
  return $result
 }
 $branch = (Invoke-RepoGit -GitArguments @('branch','--show-current') | Out-String).Trim()
-if (!$branch) { throw 'Detached HEAD: refusing automatic commit.' }
+if ($branch -ne 'ai/daily-html-backup') { throw 'Expected branch ai/daily-html-backup; refusing to push another branch.' }
+$remote = (Invoke-RepoGit -GitArguments @('remote','get-url','origin') | Out-String).Trim()
+if ($remote -notin @('https://github.com/leeli7383/English-learning.git','https://github.com/leeli7383/English-learning','git@github.com:leeli7383/English-learning.git')) { throw 'Unexpected origin; refusing upload.' }
+if ($LessonName -notmatch '^Day\s*\d+.*\d{4}-\d{2}-\d{2}.*\.html$' -or [IO.Path]::GetFileName($LessonName) -ne $LessonName) { throw 'Invalid lesson filename.' }
 $staged = Invoke-RepoGit -GitArguments @('diff','--cached','--name-only')
 if ($staged) { throw 'Existing staged changes detected; refusing to mix commits.' }
-$lessons = @(Get-ChildItem -LiteralPath $base -File -Filter 'Day*.html')
-foreach ($lesson in $lessons) {
- $html = Get-Content -LiteralPath $lesson.FullName -Raw -Encoding UTF8
- if ($html.Length -lt 2000 -or $html -notmatch '</html>' -or $html -notmatch 'https://') { throw "Invalid lesson: $($lesson.Name)" }
-}
-if ($lessons.Count -gt 0) {
- Invoke-RepoGit -GitArguments (@('add','--') + @($lessons | ForEach-Object { $_.Name })) | Out-Host
- $changed = Invoke-RepoGit -GitArguments @('diff','--cached','--name-only')
- if ($changed) {
-  $date = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow,'China Standard Time').ToString('yyyy-MM-dd')
-  Invoke-RepoGit -GitArguments @('commit','-m',"保存每日英语学习页面 $date") | Out-Host
- }
+$lesson = Join-Path $base $LessonName
+if (!(Test-Path -LiteralPath $lesson -PathType Leaf)) { throw 'Lesson is missing.' }
+$html = Get-Content -LiteralPath $lesson -Raw -Encoding UTF8
+if ($html.Length -lt 2000 -or $html -notmatch '</html>' -or $html -notmatch 'https://') { throw 'Lesson validation failed.' }
+$stageFiles = @($LessonName, 'data/expressions.json', 'PROGRESS.md')
+Invoke-RepoGit -GitArguments (@('add','--') + $stageFiles) | Out-Host
+$changed = Invoke-RepoGit -GitArguments @('diff','--cached','--name-only')
+if ($changed) {
+ $date = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow,'China Standard Time').ToString('yyyy-MM-dd')
+ Invoke-RepoGit -GitArguments @('commit','-m',"保存每日英语学习页面 $date") | Out-Host
 }
 # Always push, including retries after a previous failed upload; never force push.
 Invoke-RepoGit -GitArguments @('push','-u','origin',$branch) | Out-Host

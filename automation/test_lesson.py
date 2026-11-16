@@ -1,0 +1,128 @@
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('lesson', Path(__file__).with_name('lesson.py'))
+lesson = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(lesson)
+
+
+def fixture():
+    return {'expressions': [dict(category=cat, expression='test ' + cat, meaning='含义', register='语气',
+        collocations='搭配', context='场合', misuse='误用', comparison='辨析',
+        examples=[dict(en='Original example one.', zh='原创例句一'), dict(en='Original example two.', zh='原创例句二')],
+        source=dict(url='https://example.com/' + cat, title='Fixture only', quote='Short quote', locator='Paragraph 1', verification='Test fixture, not real research'),
+        image=None, missing_image_reason='测试缺图说明') for cat in lesson.CATEGORIES]}
+
+
+class LessonTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent.parent / 'logs')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        (self.root / 'templates').mkdir()
+        source = Path(__file__).resolve().parent.parent / 'templates/lesson.html'
+        (self.root / 'templates/lesson.html').write_bytes(source.read_bytes())
+
+    def test_render_offline_and_escape(self):
+        payload = fixture()
+        payload['expressions'][0]['meaning'] = '<script>alert(1)</script>'
+        doc = lesson.render(self.root, payload, [], 7, '2026-11-16')
+        self.assertEqual(doc.count('<section class="expression">'), 3)
+        self.assertEqual(doc.count('<li>'), 6)
+        self.assertNotIn('<script>', doc)
+        self.assertNotIn('$sections', doc)
+        self.assertEqual(doc.count('缺图说明：'), 3)
+
+    def test_reject_duplicate_and_missing_category(self):
+        with self.assertRaises(ValueError):
+            lesson.validate(fixture(), ['TEST spoken'])
+        payload = fixture()
+        payload['expressions'][1]['category'] = 'spoken'
+        with self.assertRaises(ValueError):
+            lesson.validate(payload, [])
+
+    def test_reject_incomplete_evidence_and_examples(self):
+        payload = fixture()
+        payload['expressions'][0]['source']['locator'] = ''
+        with self.assertRaises(ValueError):
+            lesson.validate(payload, [])
+        payload = fixture()
+        payload['expressions'][0]['examples'].pop()
+        with self.assertRaises(ValueError):
+            lesson.validate(payload, [])
+
+    def test_real_image_embed_and_download_failure(self):
+        payload = fixture()
+        payload['expressions'][0]['image'] = dict(url='https://example.com/image.png', source_url='https://example.com/spoken', caption='Test image')
+        data_uri = 'data:image/png;base64,iVBORw0KGgo='
+        doc = lesson.render(self.root, payload, [], 7, '2026-11-16', fetch=lambda _: data_uri)
+        self.assertIn('src="' + data_uri + '"', doc)
+        self.assertNotIn('src="https://', doc)
+        def fail(_):
+            raise OSError('Test failure')
+        doc = lesson.render(self.root, payload, [], 7, '2026-11-16', fetch=fail)
+        self.assertIn('下载或格式校验失败', doc)
+        self.assertNotIn('<img', doc)
+
+    def test_legacy_index_and_idempotent_index_refresh(self):
+        p = self.root / 'Day 002 · 2026-11-12 .html'
+        p.write_text('<h2>fair enough</h2><h2>with respect to</h2><h2>at the expense of</h2>', encoding='utf-8')
+        index = lesson.refresh_index(self.root)
+        self.assertEqual(index['files'][0]['number'], 2)
+        self.assertEqual(len(index['files'][0]['expressions']), 3)
+        before = (self.root / 'data/expressions.json').stat().st_mtime_ns
+        lesson.refresh_index(self.root)
+        self.assertEqual((self.root / 'data/expressions.json').stat().st_mtime_ns, before)
+        lesson.run(self.root, index_only=True)
+        self.assertEqual(json.loads((self.root / 'data/state.json').read_text())['push']['status'], 'not_checked')
+
+    def test_same_day_skips_model_and_records_push_failure(self):
+        today = lesson.datetime.now(lesson.timezone(lesson.timedelta(hours=8))).date().isoformat()
+        p = self.root / f'Day006_{today}.html'
+        p.write_text('<h2>one</h2><h2>two</h2><h2>three</h2>', encoding='utf-8')
+        original = p.read_bytes()
+        with patch.object(lesson.subprocess, 'run', side_effect=OSError('push failed')) as invoke:
+            with self.assertRaises(OSError):
+                lesson.run(self.root)
+            self.assertEqual(invoke.call_count, 1)
+            self.assertEqual(invoke.call_args.args[0][0], 'powershell.exe')
+        state = json.loads((self.root / 'data/state.json').read_text())
+        self.assertEqual(state['generation'], 'complete')
+        self.assertEqual(state['push']['status'], 'failed')
+        self.assertEqual(original, p.read_bytes())
+        with patch.object(lesson.subprocess, 'run') as invoke:
+            lesson.run(self.root)
+            self.assertEqual(invoke.call_count, 1)
+        self.assertEqual(json.loads((self.root / 'data/state.json').read_text())['push']['status'], 'success')
+
+    def test_generate_with_stub_model_and_atomic_publish(self):
+        (self.root / 'automation').mkdir()
+        (self.root / 'automation/prompt.txt').write_text('Fixture prompt')
+        def invoke(command, **kwargs):
+            if command[0] == 'fixture-codex.cmd':
+                (self.root / 'logs/lesson-response.json.partial').write_text(json.dumps(fixture()), encoding='utf-8')
+        with patch.object(lesson.shutil, 'which', return_value='fixture-codex.cmd'), patch.object(lesson.subprocess, 'run', side_effect=invoke) as calls:
+            lesson.run(self.root)
+            self.assertEqual(calls.call_count, 2)
+        outputs = list(self.root.glob('Day*.html'))
+        self.assertEqual(len(outputs), 1)
+        self.assertTrue(outputs[0].name.startswith('Day001_'))
+        self.assertEqual(outputs[0].read_text(encoding='utf-8').count('<section class="expression">'), 3)
+        self.assertEqual(json.loads((self.root / 'data/state.json').read_text())['push']['status'], 'success')
+
+    def test_reject_private_url_and_oversized_quote(self):
+        for url in ['http://example.com/a', 'https://localhost/a', 'https://127.0.0.1/a']:
+            with self.assertRaises(ValueError):
+                lesson.https_url(url)
+        payload = fixture()
+        payload['expressions'][0]['source']['quote'] = 'word ' * 26
+        with self.assertRaises(ValueError):
+            lesson.validate(payload, [])
+
+
+if __name__ == '__main__':
+    unittest.main()
