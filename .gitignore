@@ -8,3 +8,7 @@ Preview.html
 data/state.json
 __pycache__/
 *.pyc
+
+# Machine-specific scheduler paths, status and private migration backups
+automation/scheduler.local.json
+data/scheduler-status.json
