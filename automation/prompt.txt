@@ -5,3 +5,5 @@ Prefer expressions with relevant real images from the cited article or verified 
 JSON schema (all text fields plain text):
 {"expressions":[{"category":"spoken|writing|reading","expression":"...","meaning":"...","register":"...","collocations":"...","context":"...","misuse":"...","comparison":"...","examples":[{"en":"...","zh":"..."},{"en":"...","zh":"..."}],"source":{"url":"https://...","title":"...","author":"...","quote":"...","locator":"...","verification":"what original content you opened and checked"},"image":{"url":"https://...","source_url":"https://...","caption":"..."},"missing_image_reason":"..."}]}
 Use image:null and a nonempty missing_image_reason when no verified image is available.
+
+Deduplication: avoid the same expression across all categories, including case/punctuation/Chinese annotation variants. Return the bare English expression as its heading. If retry feedback is supplied, replace all rejected expressions and return a complete fresh JSON lesson.

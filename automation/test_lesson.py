@@ -114,6 +114,55 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(outputs[0].read_text(encoding='utf-8').count('<section class="expression">'), 3)
         self.assertEqual(json.loads((self.root / 'data/state.json').read_text())['push']['status'], 'success')
 
+    def test_duplicate_format_variants_and_same_lesson(self):
+        for expression in ['PAVE THE WAY FOR', '“pave the way for”',
+                           'pave-the-way-for', 'pave the way for（为……铺路）']:
+            payload = fixture()
+            payload['expressions'][0]['expression'] = expression
+            with self.assertRaises(lesson.DuplicateExpressionError):
+                lesson.validate(payload, ['pave the way for'])
+        payload = fixture()
+        payload['expressions'][0]['expression'] = "for what it’s worth"
+        with self.assertRaises(lesson.DuplicateExpressionError):
+            lesson.validate(payload, ["for what it's worth"])
+        payload = fixture()
+        payload['expressions'][1]['expression'] = 'TEST-spoken'
+        with self.assertRaises(lesson.DuplicateExpressionError):
+            lesson.validate(payload, [])
+
+    def test_history_survives_removed_course(self):
+        course = self.root / 'Day007_2026-11-17.html'
+        course.write_text('<h2>pave the way for</h2><h2>two</h2><h2>three</h2>')
+        lesson.refresh_index(self.root)
+        course.unlink()
+        lesson.refresh_index(self.root)
+        history = lesson.load_json(self.root / 'data/used-expressions.json', [])
+        self.assertIn('pave the way for', history)
+
+    def test_duplicate_retry_and_exhaustion(self):
+        (self.root / 'automation').mkdir()
+        (self.root / 'automation/prompt.txt').write_text('Fixture prompt')
+        for succeeds in [True, False]:
+            attempts = []
+            def invoke(command, **kwargs):
+                attempts.append(kwargs['input'])
+                payload = fixture()
+                if not succeeds or len(attempts) == 1:
+                    payload['expressions'][1]['expression'] = 'TEST-spoken'
+                (self.root / 'logs/lesson-response.json.partial').write_text(json.dumps(payload))
+            with patch.object(lesson.shutil, 'which', return_value='fixture-codex.cmd'), patch.object(lesson.subprocess, 'run', side_effect=invoke):
+                if succeeds:
+                    lesson.run(self.root, preview=True)
+                    self.assertTrue((self.root / 'Preview.html').exists())
+                    (self.root / 'Preview.html').unlink()
+                    self.assertEqual(len(attempts), 2)
+                    self.assertIn('retry_reason', attempts[1])
+                else:
+                    with self.assertRaises(lesson.DuplicateExpressionError):
+                        lesson.run(self.root, preview=True)
+                    self.assertEqual(len(attempts), 3)
+                    self.assertFalse((self.root / 'Preview.html').exists())
+
     def test_reject_private_url_and_oversized_quote(self):
         for url in ['http://example.com/a', 'https://localhost/a', 'https://127.0.0.1/a']:
             with self.assertRaises(ValueError):

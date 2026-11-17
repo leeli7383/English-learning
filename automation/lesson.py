@@ -10,6 +10,8 @@ import re
 import shutil
 from string import Template
 import subprocess
+import time
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -59,11 +61,32 @@ def refresh_index(root):
     index = {'version': 1, 'files': entries}
     if index != old or not path.exists():
         save_json(path, index)
+    history_path = root / 'data/used-expressions.json'
+    history = load_json(history_path, [])
+    known = {normalize(x) for x in history}
+    for entry in entries:
+        for expression in entry['expressions']:
+            key = normalize(expression)
+            if key not in known:
+                history.append(expression)
+                known.add(key)
+    if history != load_json(history_path, None):
+        save_json(history_path, history)
     return index
 
 
+class DuplicateExpressionError(ValueError):
+    pass
+
+
 def normalize(text):
-    return ' '.join(text.casefold().replace('’', "'").split())
+    text = unicodedata.normalize('NFKC', html.unescape(text)).casefold()
+    text = re.sub(r'<[^>]*>', '', text)
+    # Historical headings can include Chinese translations or category labels.
+    text = re.split(r'[\u3400-\u9fff]', text, maxsplit=1)[0]
+    text = text.translate(str.maketrans({'’': "'", '‘': "'", 'ʼ': "'"}))
+    text = text.replace("'", '')
+    return ' '.join(re.findall(r"[a-z0-9]+", text))
 
 
 def text_field(obj, key):
@@ -102,8 +125,10 @@ def validate(payload, previous):
         for key in ['expression', 'meaning', 'register', 'collocations', 'context', 'misuse', 'comparison']:
             text_field(item, key)
         expression = normalize(item['expression'])
+        if not expression:
+            raise ValueError('Expression must contain English text')
         if expression in seen:
-            raise ValueError('Repeated expression: ' + item['expression'])
+            raise DuplicateExpressionError('Repeated expression: ' + item['expression'])
         seen.add(expression)
         examples = item.get('examples')
         if not isinstance(examples, list) or len(examples) != 2:
@@ -204,7 +229,7 @@ def run(root, preview=False, index_only=False):
     else:
         number = max((x[0] for x in lessons(root)), default=0) + 1
         output = root / ('Preview.html' if preview else f'Day{number:03d}_{date}.html')
-        previous = [x for f in index['files'] for x in f['expressions']]
+        previous = load_json(root / 'data/used-expressions.json', [])
         prompt = (root / 'automation/prompt.txt').read_text(encoding='utf-8-sig')
         prompt += '\n' + json.dumps({'beijing_date': date, 'avoid_expressions': previous}, ensure_ascii=False)
         result_path = root / 'logs/lesson-response.json.partial'
@@ -221,11 +246,27 @@ def run(root, preview=False, index_only=False):
         # Keep existing account/model/reasoning defaults; do not silently lower quality.
         command = [executable, 'exec', '--sandbox', 'read-only', '-c', 'web_search="live"',
                    '-C', str(root), '--skip-git-repo-check', '--color', 'never', '-o', str(result_path), '-']
-        with (root / f'logs/run-{now:%Y%m%d-%H%M%S}.log').open('w', encoding='utf-8') as log:
-            subprocess.run(command, input=prompt, text=True, encoding='utf-8', stdout=log,
-                           stderr=subprocess.STDOUT, env=env, check=True, timeout=2400)
-        payload = load_json(result_path, {})
-        doc = render(root, payload, previous, number, date)
+        deadline = time.monotonic() + 2400
+        for attempt in range(1, 4):
+            result_path.unlink(missing_ok=True)
+            with (root / f'logs/run-{now:%Y%m%d-%H%M%S}-{attempt}.log').open('w', encoding='utf-8') as log:
+                subprocess.run(command, input=prompt, text=True, encoding='utf-8', stdout=log,
+                               stderr=subprocess.STDOUT, env=env, check=True,
+                               timeout=max(1, deadline - time.monotonic()))
+            payload = load_json(result_path, {})
+            try:
+                doc = render(root, payload, previous, number, date)
+                break
+            except DuplicateExpressionError as exc:
+                print(f'Attempt {attempt}: {exc}', flush=True)
+                if attempt == 3 or time.monotonic() >= deadline:
+                    raise
+                rejected = [item.get('expression', '') for item in payload.get('expressions', [])]
+                prompt += '\n' + json.dumps({
+                    'retry_reason': str(exc),
+                    'replace_rejected_expressions': rejected,
+                    'instruction': 'Return a complete new lesson. Avoid historical expressions and all rejected expressions, including punctuation/case/translation variants.'
+                }, ensure_ascii=False)
         partial = output.with_name(output.name + '.partial')
         partial.write_text(doc, encoding='utf-8')
         # Exclusive creation avoids overwriting a lesson created by another entry point.

@@ -31,7 +31,7 @@ $lesson = Join-Path $base $LessonName
 if (!(Test-Path -LiteralPath $lesson -PathType Leaf)) { throw 'Lesson is missing.' }
 $html = Get-Content -LiteralPath $lesson -Raw -Encoding UTF8
 if ($html.Length -lt 2000 -or $html -notmatch '</html>' -or $html -notmatch 'https://') { throw 'Lesson validation failed.' }
-$stageFiles = @($LessonName, 'data/expressions.json', 'PROGRESS.md')
+$stageFiles = @($LessonName, 'data/expressions.json', 'data/used-expressions.json', 'PROGRESS.md')
 Invoke-RepoGit -GitArguments (@('add','--') + $stageFiles) | Out-Host
 $changed = Invoke-RepoGit -GitArguments @('diff','--cached','--name-only')
 if ($changed) {
