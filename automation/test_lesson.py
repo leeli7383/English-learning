@@ -12,7 +12,7 @@ spec.loader.exec_module(lesson)
 
 def fixture():
     return {'expressions': [dict(category=cat, expression='test ' + cat, meaning='含义', register='语气',
-        collocations='搭配', context='场合', misuse='误用', comparison='辨析',
+        collocations='搭配', context='场合', comparison='辨析',
         examples=[dict(en='Original example one.', zh='原创例句一'), dict(en='Original example two.', zh='原创例句二')],
         source=dict(url='https://example.com/' + cat, title='Fixture only', quote='Short quote', locator='Paragraph 1', verification='Test fixture, not real research'),
         image=None, missing_image_reason='测试缺图说明') for cat in lesson.CATEGORIES]}
@@ -36,6 +36,9 @@ class LessonTests(unittest.TestCase):
         self.assertNotIn('<script>', doc)
         self.assertNotIn('$sections', doc)
         self.assertEqual(doc.count('缺图说明：'), 3)
+        self.assertNotIn('常见误用', doc)
+        payload['expressions'][0]['misuse'] = '旧版本误用字段'
+        self.assertNotIn('旧版本误用字段', lesson.render(self.root, payload, [], 7, '2026-11-16'))
 
     def test_reject_duplicate_and_missing_category(self):
         with self.assertRaises(ValueError):

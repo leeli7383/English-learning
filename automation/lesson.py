@@ -122,7 +122,7 @@ def validate(payload, previous):
     seen = {normalize(x) for x in previous}
     quotes = {}
     for item in items:
-        for key in ['expression', 'meaning', 'register', 'collocations', 'context', 'misuse', 'comparison']:
+        for key in ['expression', 'meaning', 'register', 'collocations', 'context', 'comparison']:
             text_field(item, key)
         expression = normalize(item['expression'])
         if not expression:
@@ -178,7 +178,7 @@ def render(root, payload, previous, number, date, fetch=download_image):
         parts = [f'<section class="expression"><span class="tag">{CATEGORIES[item["category"]]}</span>',
                  f'<h2>{e(item["expression"])}</h2>']
         for key, title in [('meaning', '核心含义'), ('register', '语气与语域'), ('collocations', '常见搭配'),
-                           ('context', '适用场合'), ('misuse', '常见误用'), ('comparison', '近义表达辨析')]:
+                           ('context', '适用场合'), ('comparison', '近义表达辨析')]:
             parts.append(f'<h3>{title}</h3><p>{e(item[key])}</p>')
         parts += ['<h3>真实出处</h3>', f'<p class="quote">{e(source["quote"])}</p>',
                   f'<p><a href="{e(source["url"])}">{e(source["title"])}</a> · {e(source.get("author", ""))}</p>',
