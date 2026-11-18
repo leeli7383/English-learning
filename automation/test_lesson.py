@@ -163,6 +163,23 @@ class LessonTests(unittest.TestCase):
                     self.assertEqual(len(attempts), 3)
                     self.assertFalse((self.root / 'Preview.html').exists())
 
+    def test_backend_failure_preserves_reason_and_does_not_publish(self):
+        (self.root / 'automation').mkdir()
+        (self.root / 'automation/prompt.txt').write_text('Fixture prompt')
+        def fail(command, **kwargs):
+            kwargs['stdout'].write('HTTP 403: Unable to load site\nworkspace routing discovery failed')
+            kwargs['stdout'].flush()
+            raise lesson.subprocess.CalledProcessError(1, command)
+        with patch.object(lesson.shutil, 'which', return_value='fixture-codex.cmd'), patch.object(lesson.subprocess, 'run', side_effect=fail) as calls:
+            with self.assertRaises(lesson.GenerationFailed):
+                lesson.run(self.root)
+            self.assertEqual(calls.call_count, 1)
+        state = json.loads((self.root / 'data/state.json').read_text())
+        self.assertEqual(state['error_code'], 'backend_access_denied')
+        self.assertEqual(state['push']['status'], 'not_started')
+        self.assertTrue(Path(state['error_log']).exists())
+        self.assertFalse(list(self.root.glob('Day*.html')))
+
     def test_reject_private_url_and_oversized_quote(self):
         for url in ['http://example.com/a', 'https://localhost/a', 'https://127.0.0.1/a']:
             with self.assertRaises(ValueError):

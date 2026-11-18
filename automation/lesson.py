@@ -202,6 +202,30 @@ def render(root, payload, previous, number, date, fetch=download_image):
     return template.substitute(title=f'进阶英语 · Day {number:03d}', date=date, sections='\n'.join(sections))
 
 
+class GenerationFailed(RuntimeError):
+    """A safe, actionable error summary; never copy raw response bodies/tokens."""
+
+
+def generation_failure(log_path):
+    text = log_path.read_text(encoding='utf-8', errors='replace')[-120000:]
+    if re.search(r'HTTP\s*403|status(?: code)?:?\s*403', text, re.I):
+        code = 'backend_access_denied'
+        message = 'Codex backend returned HTTP 403. Check the existing proxy connection and service access; generation has not completed.'
+    elif re.search(r'usage limit|quota exceeded|insufficient_quota', text, re.I):
+        code = 'usage_limit'
+        message = 'Codex reported a usage limit; wait for quota recovery before retrying.'
+    elif re.search(r'HTTP\s*401|unauthorized|token.*expired', text, re.I):
+        code = 'authentication_failed'
+        message = 'Codex authentication failed. Check codex login status.'
+    elif re.search(r'workspace routing discovery failed|request timed out|failed to connect|connection failed|error sending request', text, re.I):
+        code = 'backend_connection_failed'
+        message = 'Codex backend connection or workspace routing failed. Check proxy and network availability.'
+    else:
+        code = 'generation_process_failed'
+        message = 'Codex generation process exited unsuccessfully. See the generation log for details.'
+    return code, message
+
+
 def run(root, preview=False, index_only=False):
     root = root.resolve()
     index = refresh_index(root)
@@ -236,7 +260,9 @@ def run(root, preview=False, index_only=False):
         result_path.parent.mkdir(exist_ok=True)
         result_path.unlink(missing_ok=True)
         if not preview:
-            state.update(number=number, file=output.name, generation='running',
+            for key in ('last_error', 'error_code', 'error_message', 'error_log'):
+                state.pop(key, None)
+            state.update(attempt_started_at=now.isoformat(), number=number, file=output.name, generation='running',
                          push={'status': 'not_started', 'branch': BRANCH})
             save_json(state_path, state)
         executable = shutil.which('codex.cmd') or shutil.which('codex')
@@ -249,10 +275,21 @@ def run(root, preview=False, index_only=False):
         deadline = time.monotonic() + 2400
         for attempt in range(1, 4):
             result_path.unlink(missing_ok=True)
-            with (root / f'logs/run-{now:%Y%m%d-%H%M%S}-{attempt}.log').open('w', encoding='utf-8') as log:
-                subprocess.run(command, input=prompt, text=True, encoding='utf-8', stdout=log,
-                               stderr=subprocess.STDOUT, env=env, check=True,
-                               timeout=max(1, deadline - time.monotonic()))
+            log_path = root / f'logs/run-{now:%Y%m%d-%H%M%S}-{attempt}.log'
+            try:
+                with log_path.open('w', encoding='utf-8') as log:
+                    subprocess.run(command, input=prompt, text=True, encoding='utf-8', stdout=log,
+                                   stderr=subprocess.STDOUT, env=env, check=True,
+                                   timeout=max(1, deadline - time.monotonic()))
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                code, message = generation_failure(log_path)
+                if isinstance(exc, subprocess.TimeoutExpired):
+                    code, message = 'generation_timeout', 'Generation exceeded the shared 40-minute budget.'
+                if not preview:
+                    state.update(generation='failed', last_error='GenerationFailed',
+                                 error_code=code, error_message=message, error_log=str(log_path))
+                    save_json(state_path, state)
+                raise GenerationFailed(f'{message} Log: {log_path}') from None
             payload = load_json(result_path, {})
             try:
                 doc = render(root, payload, previous, number, date)
@@ -287,6 +324,8 @@ def run(root, preview=False, index_only=False):
         pattern = r'<!-- daily-status:start -->.*?<!-- daily-status:end -->'
         content = re.sub(pattern, lambda _: summary, content, flags=re.S) if re.search(pattern, content, re.S) else content.rstrip() + '\n\n' + summary + '\n'
         progress.write_text(content, encoding='utf-8')
+    for key in ('last_error', 'error_code', 'error_message', 'error_log'):
+        state.pop(key, None)
     state.update(number=number, file=output.name, generation='complete')
     state['push'] = {'status': 'pending', 'branch': BRANCH}
     save_json(state_path, state)

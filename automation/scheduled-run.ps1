@@ -1,4 +1,4 @@
-$ErrorActionPreference='Stop'
+﻿$ErrorActionPreference='Stop'
 $base=Split-Path -Parent $PSScriptRoot
 $statusPath=Join-Path $base 'data/scheduler-status.json'
 $started=Get-Date
@@ -21,7 +21,18 @@ try {
  & $config.powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'run.ps1') *> $log
  $exitCode=$LASTEXITCODE
  $ErrorActionPreference='Stop'
- if ($exitCode -ne 0) { throw "Daily runner exit $exitCode; see log." }
+ if ($exitCode -ne 0) {
+  $stateFile=Join-Path $base 'data/state.json'
+  if (Test-Path -LiteralPath $stateFile) {
+   $daily=Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+   if ($daily.error_message -and $daily.attempt_started_at -and ([DateTimeOffset]::Parse($daily.attempt_started_at).LocalDateTime -ge $started.AddSeconds(-1))) {
+    $status['generationLog']=$daily.error_log
+    $status['errorCode']=$daily.error_code
+    throw $daily.error_message
+   }
+  }
+  throw "Daily runner exit $exitCode; see log."
+ }
  $status.status='success'
 } catch {
  $status.status='failed'
