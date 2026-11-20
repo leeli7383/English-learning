@@ -113,7 +113,7 @@ def https_url(value):
     return value
 
 
-def validate(payload, previous):
+def validate(payload, previous, require_vocabulary=False):
     items = payload.get('expressions')
     if not isinstance(items, list) or len(items) != 3:
         raise ValueError('Exactly 3 expressions are required')
@@ -150,7 +150,51 @@ def validate(payload, previous):
             text_field(image, 'caption')
         else:
             text_field(item, 'missing_image_reason')
+    vocabulary = payload.get('vocabulary')
+    if vocabulary is None and not require_vocabulary:
+        return items  # Existing saved responses remain renderable.
+    if not isinstance(vocabulary, list) or len(vocabulary) != 3:
+        raise ValueError('Exactly 3 IELTS vocabulary sentences are required')
+    sentences = set()
+    for entry in vocabulary:
+        sentence = text_field(entry, 'sentence')
+        text_field(entry, 'translation')
+        key = normalize(sentence)
+        if key in sentences:
+            raise ValueError('Repeated vocabulary sentence')
+        sentences.add(key)
+        source = entry['source']
+        for field in ['url', 'title', 'locator', 'verification']:
+            text_field(source, field)
+        url = https_url(source['url'])
+        quotes[url] = quotes.get(url, 0) + len(sentence.split())
+        if quotes[url] > 25:
+            raise ValueError('Quotes from a single URL exceed 25 words')
+        words = entry.get('words')
+        if not isinstance(words, list) or not 3 <= len(words) <= 5:
+            raise ValueError('Each sentence needs 3-5 vocabulary words')
+        seen_words = set()
+        for word in words:
+            for field in ['word', 'lemma', 'pos', 'meaning']:
+                text_field(word, field)
+            surface = word['word'].strip()
+            if not re.fullmatch(r"[A-Za-z]+(?:[-'’][A-Za-z]+)*", surface):
+                raise ValueError('Vocabulary word must be a single English word')
+            if surface.casefold() in seen_words or not re.search(r'(?<!\w)' + re.escape(surface) + r'(?!\w)', sentence, re.I):
+                raise ValueError('Vocabulary word is repeated or absent from sentence: ' + surface)
+            seen_words.add(surface.casefold())
     return items
+
+
+def underline_words(sentence, words):
+    pattern = r'(?<!\w)(?:' + '|'.join(re.escape(x['word'].strip()) for x in words) + r')(?!\w)'
+    parts = []
+    end = 0
+    for match in re.finditer(pattern, sentence, re.I):
+        parts.extend([html.escape(sentence[end:match.start()]), '<u>' + html.escape(match[0]) + '</u>'])
+        end = match.end()
+    parts.append(html.escape(sentence[end:]))
+    return ''.join(parts)
 
 
 def download_image(url):
@@ -197,6 +241,18 @@ def render(root, payload, previous, number, date, fetch=download_image):
                 print(f'Image unavailable: {type(exc).__name__}', flush=True)
         else:
             parts.append(f'<p class="note">缺图说明：{e(item["missing_image_reason"])}</p>')
+        sections.append('\n'.join(parts) + '</section>')
+    if payload.get('vocabulary'):
+        parts = ['<section class="vocabulary"><h3>雅思词汇 · 常见话题用句</h3>']
+        for entry in payload['vocabulary']:
+            parts.append('<article class="vocabulary-sentence">')
+            parts.append('<p lang="en">' + underline_words(entry['sentence'], entry['words']) + '</p>')
+            parts.append('<dl>')
+            for word in entry['words']:
+                parts.append(f'<dt>{e(word["word"])} · {e(word["lemma"])} · {e(word["pos"])}</dt><dd>{e(word["meaning"])}</dd>')
+            parts += ['</dl>', f'<p>{e(entry["translation"])}</p>']
+            source = entry['source']
+            parts.append(f'<p class="note">出处：<a href="{e(source["url"])}">{e(source["title"])}</a> · {e(source["locator"])} · {e(source["verification"])}</p></article>')
         sections.append('\n'.join(parts) + '</section>')
     template = Template((root / 'templates/lesson.html').read_text(encoding='utf-8-sig'))
     return template.substitute(title=f'进阶英语 · Day {number:03d}', date=date, sections='\n'.join(sections))
@@ -292,6 +348,7 @@ def run(root, preview=False, index_only=False):
                 raise GenerationFailed(f'{message} Log: {log_path}') from None
             payload = load_json(result_path, {})
             try:
+                validate(payload, previous, require_vocabulary=True)
                 doc = render(root, payload, previous, number, date)
                 break
             except DuplicateExpressionError as exc:

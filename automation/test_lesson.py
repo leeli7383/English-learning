@@ -15,7 +15,10 @@ def fixture():
         collocations='搭配', context='场合', comparison='辨析',
         examples=[dict(en='Original example one.', zh='原创例句一'), dict(en='Original example two.', zh='原创例句二')],
         source=dict(url='https://example.com/' + cat, title='Fixture only', quote='Short quote', locator='Paragraph 1', verification='Test fixture, not real research'),
-        image=None, missing_image_reason='测试缺图说明') for cat in lesson.CATEGORIES]}
+        image=None, missing_image_reason='测试缺图说明') for cat in lesson.CATEGORIES],
+        'vocabulary': [dict(sentence=f'Sustainable transport reduces pollution in region {i}.', translation='可持续交通减少污染。',
+            words=[dict(word=w, lemma=w.lower(), pos='测试词性', meaning='测试释义') for w in ['Sustainable', 'transport', 'pollution']],
+            source=dict(url=f'https://example.com/vocabulary/{i}', title='Fixture only', locator='Paragraph 1', verification='Fixture')) for i in range(3)]}
 
 
 class LessonTests(unittest.TestCase):
@@ -182,6 +185,30 @@ class LessonTests(unittest.TestCase):
         self.assertEqual(state['push']['status'], 'not_started')
         self.assertTrue(Path(state['error_log']).exists())
         self.assertFalse(list(self.root.glob('Day*.html')))
+
+    def test_vocabulary_underlines_and_definitions(self):
+        payload = fixture()
+        payload['vocabulary'][0]['sentence'] += ' <script>alert(1)</script>'
+        doc = lesson.render(self.root, payload, [], 1, '2026-11-20')
+        self.assertEqual(doc.count('<u>'), 9)
+        self.assertIn('<u>Sustainable</u>', doc)
+        self.assertIn('<dd>测试释义</dd>', doc)
+        self.assertNotIn('<script>', doc)
+        self.assertEqual(doc.count('<h2>'), 3)
+        (self.root / 'Day001_2026-11-20.html').write_text(doc, encoding='utf-8')
+        self.assertEqual(len(lesson.refresh_index(self.root)['files'][0]['expressions']), 3)
+
+    def test_vocabulary_required_and_whole_word_validation(self):
+        payload = fixture()
+        del payload['vocabulary']
+        lesson.validate(payload, [])
+        with self.assertRaises(ValueError):
+            lesson.validate(payload, [], require_vocabulary=True)
+        for word in ['port', 'absent', 'transport pollution']:
+            payload = fixture()
+            payload['vocabulary'][0]['words'][0]['word'] = word
+            with self.assertRaises(ValueError):
+                lesson.validate(payload, [], require_vocabulary=True)
 
     def test_reject_private_url_and_oversized_quote(self):
         for url in ['http://example.com/a', 'https://localhost/a', 'https://127.0.0.1/a']:
